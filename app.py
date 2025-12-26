@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_templates, request, jsonify
 import cv2
 import numpy as np
 import base64
@@ -22,7 +22,7 @@ CLASSES = [
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_templates("index.html")
 
 @app.route("/detect", methods=["POST"])
 def detect():
