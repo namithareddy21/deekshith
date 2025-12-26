@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Real-Time Object Detection</title>
+<style>
+body {
+    font-family: Arial;
+    background: #eef3f7;
+    text-align: center;
+}
+h1 { letter-spacing: 3px; }
+button {
+    padding: 12px 25px;
+    margin: 10px;
+    border: none;
+    border-radius: 25px;
+    background: #6fc7a6;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+}
+.container {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-top: 30px;
+}
+.box {
+    background: white;
+    padding: 20px;
+    border-radius: 20px;
+}
+video, canvas {
+    width: 400px;
+    height: 300px;
+    border-radius: 15px;
+}
+.info {
+    margin: 30px auto;
+    width: 60%;
+    background: white;
+    padding: 20px;
+    border-radius: 20px;
+}
+</style>
+</head>
+
+<body>
+<h1>REAL-TIME OBJECT DETECTION</h1>
+
+<button onclick="start()">Start Detection</button>
+<button onclick="stop()">Stop Detection</button>
+
+<div class="container">
+    <div class="box">
+        <h3>Input (Live Camera)</h3>
+        <video id="video" autoplay></video>
+    </div>
+
+    <div class="box">
+        <h3>Output (Detection)</h3>
+        <canvas id="canvas"></canvas>
+    </div>
+</div>
+
+<div class="info">
+    <h3>Total Objects Detected: <span id="count">0</span></h3>
+    <div id="desc">Click Start Detection</div>
+</div>
+
+<script>
+let video = document.getElementById("video");
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
+let running = false;
+
+navigator.mediaDevices.getUserMedia({ video: true })
+.then(stream => video.srcObject = stream);
+
+function start() {
+    running = true;
+    detect();
+}
+
+function stop() {
+    running = false;
+}
+
+function detect() {
+    if (!running) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    let img = canvas.toDataURL("image/jpeg");
+
+    fetch("/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image: img })
+    })
+    .then(res => res.json())
+    .then(data => {
+        document.getElementById("count").innerText = data.count;
+        let desc = "";
+
+        data.detections.forEach(d => {
+            ctx.strokeStyle = "lime";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(d.x, d.y, d.w, d.h);
+            ctx.fillText(d.label, d.x, d.y - 5);
+            desc += `${d.label} (${d.w}x${d.h})<br>`;
+        });
+
+        document.getElementById("desc").innerHTML = desc || "No objects detected";
+    });
+
+    setTimeout(detect, 400);
+}
+</script>
+</body>
+</html>
