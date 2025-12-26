@@ -5,7 +5,6 @@ import base64
 
 app = Flask(__name__)
 
-# Load ONNX model
 net = cv2.dnn.readNetFromONNX("yolov8n.onnx")
 
 CLASSES = [
@@ -30,35 +29,45 @@ def detect():
     try:
         data = request.json["image"]
         img_bytes = base64.b64decode(data.split(",")[1])
-        frame = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+        img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
 
-        h, w, _ = frame.shape
-        blob = cv2.dnn.blobFromImage(frame, 1/255, (640,640), swapRB=True)
+        h, w, _ = img.shape
+
+        blob = cv2.dnn.blobFromImage(img, 1/255.0, (640,640), swapRB=True, crop=False)
         net.setInput(blob)
-        output = net.forward()[0]
+
+        preds = net.forward()[0]  # (84, 8400)
+        preds = preds.transpose()  # (8400, 84)
 
         detections = []
 
-        for det in output:
-            conf = det[4]
-            if conf > 0.45:
-                scores = det[5:]
-                class_id = np.argmax(scores)
-                if scores[class_id] > 0.45:
-                    cx, cy, bw, bh = det[:4]
-                    x = int((cx - bw/2) * w)
-                    y = int((cy - bh/2) * h)
-                    bw = int(bw * w)
-                    bh = int(bh * h)
+        for pred in preds:
+            confidence = pred[4]
+            if confidence < 0.5:
+                continue
 
-                    detections.append({
-                        "label": CLASSES[class_id],
-                        "x": x,
-                        "y": y,
-                        "w": bw,
-                        "h": bh,
-                        "desc": f"{CLASSES[class_id]} detected"
-                    })
+            class_scores = pred[5:]
+            class_id = np.argmax(class_scores)
+            score = class_scores[class_id]
+
+            if score < 0.5:
+                continue
+
+            cx, cy, bw, bh = pred[:4]
+
+            x = int((cx - bw/2) * w)
+            y = int((cy - bh/2) * h)
+            bw = int(bw * w)
+            bh = int(bh * h)
+
+            detections.append({
+                "label": CLASSES[class_id],
+                "x": x,
+                "y": y,
+                "w": bw,
+                "h": bh,
+                "desc": f"{CLASSES[class_id]} detected"
+            })
 
         return jsonify({
             "count": len(detections),
