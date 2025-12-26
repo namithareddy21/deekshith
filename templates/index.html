@@ -2,46 +2,24 @@
 <html>
 <head>
 <title>Real-Time Object Detection</title>
+
 <style>
-body {
-    font-family: Arial;
-    background: #eef3f7;
-    text-align: center;
-}
-h1 { letter-spacing: 3px; }
+body { font-family: Arial; background:#eef3f7; text-align:center; }
+h1 { letter-spacing:3px; }
 button {
-    padding: 12px 25px;
-    margin: 10px;
-    border: none;
-    border-radius: 25px;
-    background: #6fc7a6;
-    color: white;
-    font-size: 16px;
-    cursor: pointer;
+    padding:12px 25px;
+    border:none;
+    border-radius:25px;
+    background:#6fc7a6;
+    color:white;
+    font-size:16px;
+    margin:10px;
+    cursor:pointer;
 }
-.container {
-    display: flex;
-    justify-content: center;
-    gap: 40px;
-    margin-top: 30px;
-}
-.box {
-    background: white;
-    padding: 20px;
-    border-radius: 20px;
-}
-video, canvas {
-    width: 400px;
-    height: 300px;
-    border-radius: 15px;
-}
-.info {
-    margin: 30px auto;
-    width: 60%;
-    background: white;
-    padding: 20px;
-    border-radius: 20px;
-}
+.container { display:flex; justify-content:center; gap:40px; margin-top:30px; }
+.box { background:white; padding:20px; border-radius:20px; }
+video, canvas { width:400px; height:300px; border-radius:15px; }
+.info { margin:30px auto; width:60%; background:white; padding:20px; border-radius:20px; }
 </style>
 </head>
 
@@ -59,7 +37,7 @@ video, canvas {
 
     <div class="box">
         <h3>Output (Detection)</h3>
-        <canvas id="canvas"></canvas>
+        <canvas id="canvas" width="400" height="300"></canvas>
     </div>
 </div>
 
@@ -69,9 +47,9 @@ video, canvas {
 </div>
 
 <script>
-let video = document.getElementById("video");
-let canvas = document.getElementById("canvas");
-let ctx = canvas.getContext("2d");
+const video = document.getElementById("video");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 let running = false;
 
 navigator.mediaDevices.getUserMedia({ video: true })
@@ -90,7 +68,7 @@ function detect() {
     if (!running) return;
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    let img = canvas.toDataURL("image/jpeg");
+    const img = canvas.toDataURL("image/jpeg");
 
     fetch("/detect", {
         method: "POST",
@@ -99,21 +77,26 @@ function detect() {
     })
     .then(res => res.json())
     .then(data => {
-        document.getElementById("count").innerText = data.count;
-        let desc = "";
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        data.detections.forEach(d => {
-            ctx.strokeStyle = "lime";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(d.x, d.y, d.w, d.h);
-            ctx.fillText(d.label, d.x, d.y - 5);
-            desc += `${d.label} (${d.w}x${d.h})<br>`;
-        });
+        document.getElementById("count").innerText = data.count ?? 0;
+        let text = "";
 
-        document.getElementById("desc").innerHTML = desc || "No objects detected";
+        if (data.detections) {
+            data.detections.forEach(d => {
+                ctx.strokeStyle = "lime";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(d.x, d.y, d.w, d.h);
+                ctx.fillStyle = "lime";
+                ctx.fillText(d.label, d.x, d.y - 5);
+                text += `${d.label} (${d.w}×${d.h})<br>`;
+            });
+        }
+
+        document.getElementById("desc").innerHTML = text || "No objects detected";
     });
 
-    setTimeout(detect, 400);
+    setTimeout(detect, 500);
 }
 </script>
 </body>
