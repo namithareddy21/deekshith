@@ -1,24 +1,12 @@
 from flask import Flask, render_template, request, jsonify
+from ultralytics import YOLO
 import cv2
 import numpy as np
-import base64
 
 app = Flask(__name__)
 
-net = cv2.dnn.readNetFromONNX("yolov8n.onnx")
-
-CLASSES = [
-    "person","bicycle","car","motorcycle","airplane","bus","train","truck","boat",
-    "traffic light","fire hydrant","stop sign","parking meter","bench","bird","cat",
-    "dog","horse","sheep","cow","elephant","bear","zebra","giraffe","backpack","umbrella",
-    "handbag","tie","suitcase","frisbee","skis","snowboard","sports ball","kite",
-    "baseball bat","baseball glove","skateboard","surfboard","tennis racket","bottle",
-    "wine glass","cup","fork","knife","spoon","bowl","banana","apple","sandwich","orange",
-    "broccoli","carrot","hot dog","pizza","donut","cake","chair","couch","potted plant",
-    "bed","dining table","toilet","tv","laptop","mouse","remote","keyboard","cell phone",
-    "microwave","oven","toaster","sink","refrigerator","book","clock","vase","scissors",
-    "teddy bear","hair drier","toothbrush"
-]
+# Load YOLOv8 model
+model = YOLO("yolov8n.pt")  # fast & lightweight
 
 @app.route("/")
 def index():
@@ -26,57 +14,33 @@ def index():
 
 @app.route("/detect", methods=["POST"])
 def detect():
-    try:
-        data = request.json["image"]
-        img_bytes = base64.b64decode(data.split(",")[1])
-        img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+    file = request.files.get("image")
+    if not file:
+        return jsonify({"count": 0, "description": [], "objects": []})
 
-        h, w, _ = img.shape
+    # Convert image to OpenCV format
+    img_bytes = np.frombuffer(file.read(), np.uint8)
+    img = cv2.imdecode(img_bytes, cv2.IMREAD_COLOR)
 
-        blob = cv2.dnn.blobFromImage(img, 1/255.0, (640,640), swapRB=True, crop=False)
-        net.setInput(blob)
+    # Run detection
+    results = model(img, conf=0.4)[0]
 
-        preds = net.forward()[0]  # (84, 8400)
-        preds = preds.transpose()  # (8400, 84)
+    objects = []
+    for box in results.boxes:
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        cls_id = int(box.cls[0])
+        label = model.names[cls_id]
 
-        detections = []
-
-        for pred in preds:
-            confidence = pred[4]
-            if confidence < 0.5:
-                continue
-
-            class_scores = pred[5:]
-            class_id = np.argmax(class_scores)
-            score = class_scores[class_id]
-
-            if score < 0.5:
-                continue
-
-            cx, cy, bw, bh = pred[:4]
-
-            x = int((cx - bw/2) * w)
-            y = int((cy - bh/2) * h)
-            bw = int(bw * w)
-            bh = int(bh * h)
-
-            detections.append({
-                "label": CLASSES[class_id],
-                "x": x,
-                "y": y,
-                "w": bw,
-                "h": bh,
-                "desc": f"{CLASSES[class_id]} detected"
-            })
-
-        return jsonify({
-            "count": len(detections),
-            "detections": detections
+        objects.append({
+            "label": label,
+            "box": [x1, y1, x2, y2]
         })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+    return jsonify({
+        "count": len(objects),
+        "description": list(set(obj["label"] for obj in objects)),
+        "objects": objects
+    })
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=True)
