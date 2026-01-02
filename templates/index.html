@@ -1,103 +1,156 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
 <title>Real-Time Object Detection</title>
 
 <style>
-body { font-family: Arial; background:#eef3f7; text-align:center; }
-h1 { letter-spacing:3px; }
-button {
-    padding:12px 25px;
-    border:none;
-    border-radius:25px;
-    background:#6fc7a6;
-    color:white;
-    font-size:16px;
-    margin:10px;
-    cursor:pointer;
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f9fb;
+    text-align: center;
 }
-.container { display:flex; justify-content:center; gap:40px; margin-top:30px; }
-.box { background:white; padding:20px; border-radius:20px; }
-video, canvas { width:400px; height:300px; border-radius:15px; }
-.info { margin:30px auto; width:60%; background:white; padding:20px; border-radius:20px; }
+h1 { margin: 20px; }
+
+button {
+    padding: 12px 25px;
+    border: none;
+    background: #6ec7a1;
+    color: white;
+    font-size: 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    margin: 10px;
+}
+
+.container {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-top: 20px;
+}
+
+.box {
+    background: white;
+    padding: 15px;
+    border-radius: 15px;
+}
+
+video, canvas {
+    width: 320px;
+    height: 240px;
+    border-radius: 10px;
+}
+
+#info {
+    margin-top: 30px;
+    font-size: 18px;
+}
 </style>
 </head>
 
 <body>
+
 <h1>REAL-TIME OBJECT DETECTION</h1>
 
-<button onclick="start()">Start Detection</button>
-<button onclick="stop()">Stop Detection</button>
+<button onclick="startDetection()">Start Detection</button>
+<button onclick="stopDetection()">Stop Detection</button>
 
 <div class="container">
     <div class="box">
         <h3>Input (Live Camera)</h3>
-        <video id="video" autoplay></video>
+        <video id="video" autoplay muted></video>
     </div>
 
     <div class="box">
         <h3>Output (Detection)</h3>
-        <canvas id="canvas" width="400" height="300"></canvas>
+        <canvas id="canvas"></canvas>
     </div>
 </div>
 
-<div class="info">
-    <h3>Total Objects Detected: <span id="count">0</span></h3>
-    <div id="desc">Click Start Detection</div>
+<div id="info">
+    <p><b>Total Objects Detected:</b> <span id="count">0</span></p>
+    <p id="desc">No objects detected</p>
 </div>
 
 <script>
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-let running = false;
 
+let isDetecting = false;
+let rafId = null;
+let lastDetectTime = 0;
+
+// Start camera
 navigator.mediaDevices.getUserMedia({ video: true })
 .then(stream => video.srcObject = stream);
 
-function start() {
-    running = true;
-    detect();
+// Match canvas size to video
+video.addEventListener("loadedmetadata", () => {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+});
+
+function startDetection() {
+    isDetecting = true;
+    detectLoop();
 }
 
-function stop() {
-    running = false;
+function stopDetection() {
+    isDetecting = false;
+    if (rafId) cancelAnimationFrame(rafId);
 }
 
-function detect() {
-    if (!running) return;
+async function detectLoop(timestamp) {
+    if (!isDetecting) return;
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const img = canvas.toDataURL("image/jpeg");
 
-    fetch("/detect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: img })
-    })
-    .then(res => res.json())
-    .then(data => {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // Run detection every 300ms (performance-friendly)
+    if (!lastDetectTime || timestamp - lastDetectTime > 300) {
+        lastDetectTime = timestamp;
+        await runDetection();
+    }
 
-        document.getElementById("count").innerText = data.count ?? 0;
-        let text = "";
+    rafId = requestAnimationFrame(detectLoop);
+}
 
-        if (data.detections) {
-            data.detections.forEach(d => {
+async function runDetection() {
+    const blob = await new Promise(resolve =>
+        canvas.toBlob(resolve, "image/jpeg", 0.8)
+    );
+
+    const formData = new FormData();
+    formData.append("image", blob);
+
+    try {
+        const res = await fetch("/detect", {
+            method: "POST",
+            body: formData
+        });
+        const data = await res.json();
+
+        document.getElementById("count").innerText = data.count;
+        document.getElementById("desc").innerText =
+            data.description.length ? data.description.join(", ") : "No objects detected";
+
+        if (data.objects) {
+            data.objects.forEach(obj => {
+                const [x1, y1, x2, y2] = obj.box;
                 ctx.strokeStyle = "lime";
-                ctx.lineWidth = 2;
-                ctx.strokeRect(d.x, d.y, d.w, d.h);
+                ctx.lineWidth = 3;
+                ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
                 ctx.fillStyle = "lime";
-                ctx.fillText(d.label, d.x, d.y - 5);
-                text += `${d.label} (${d.w}×${d.h})<br>`;
+                ctx.font = "bold 16px Arial";
+                ctx.fillText(obj.label, x1, y1 - 5);
             });
         }
-
-        document.getElementById("desc").innerHTML = text || "No objects detected";
-    });
-
-    setTimeout(detect, 500);
+    } catch (err) {
+        console.error("Detection error:", err);
+    }
 }
 </script>
+
 </body>
 </html>
